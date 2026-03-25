@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Ghost shape -->
+    <path
+        android:fillColor="#9B72CF"
+        android:pathData="M54,20 C38,20 26,32 26,48 L26,78 C26,80 28,82 30,80 L34,76 C36,74 38,76 38,78 L38,82 C38,84 40,86 42,84 L46,80 C48,78 50,80 50,82 L50,86 C50,88 52,88 54,86 L58,82 C60,80 62,82 62,84 L62,80 C62,78 64,76 66,78 L70,82 C72,84 74,82 74,80 L74,76 C74,74 76,74 78,76 L82,80 C84,82 82,78 82,78 L82,48 C82,32 70,20 54,20Z"/>
+    <!-- Eyes -->
+    <path
+        android:fillColor="#1E1E2A"
+        android:pathData="M42,42 C42,39.8 43.8,38 46,38 C48.2,38 50,39.8 50,42 C50,44.2 48.2,46 46,46 C43.8,46 42,44.2 42,42Z"/>
+    <path
+        android:fillColor="#1E1E2A"
+        android:pathData="M58,42 C58,39.8 59.8,38 62,38 C64.2,38 66,39.8 66,42 C66,44.2 64.2,46 62,46 C59.8,46 58,44.2 58,42Z"/>
+    <!-- Mask line -->
+    <path
+        android:strokeColor="#2DD4BF"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M36,50 L72,50"/>
+</vector>
