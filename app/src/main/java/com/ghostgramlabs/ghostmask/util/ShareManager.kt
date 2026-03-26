@@ -39,4 +39,23 @@ object ShareManager {
             Intent.createChooser(shareIntent, "Share encoded image")
         }
     }
+
+    suspend fun createEmailIntent(context: Context, bitmap: Bitmap, fileName: String): Intent {
+        return withContext(Dispatchers.IO) {
+            val file = FileSaveManager.savePngToCache(context, bitmap, fileName)
+            val contentUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_SUBJECT, "GhostMask encoded PNG")
+                putExtra(Intent.EXTRA_TEXT, "Share this file as PNG only. Recompression may destroy the hidden payload.")
+                putExtra(Intent.EXTRA_STREAM, contentUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+    }
 }

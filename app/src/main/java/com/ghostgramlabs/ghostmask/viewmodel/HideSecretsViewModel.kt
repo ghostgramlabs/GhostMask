@@ -1,10 +1,12 @@
 package com.ghostgramlabs.ghostmask.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ghostgramlabs.ghostmask.data.settings.AppSettingsRepository
 import com.ghostgramlabs.ghostmask.domain.model.EmbeddingMetadata
 import com.ghostgramlabs.ghostmask.domain.model.EmbeddingMode
 import com.ghostgramlabs.ghostmask.domain.model.GhostMeta
@@ -23,19 +25,44 @@ import com.ghostgramlabs.ghostmask.util.ShareManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class HideSecretsViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val settingsRepository = AppSettingsRepository(application)
     private val _uiState = MutableStateFlow(HideSecretsUiState())
     val uiState: StateFlow<HideSecretsUiState> = _uiState.asStateFlow()
 
     private var coverBitmap: Bitmap? = null
     private var secretImageBitmap: Bitmap? = null
     private var encodedBitmap: Bitmap? = null
+    private var defaultsApplied = false
+    private var currentDefaultSecureView = true
+    private var currentDefaultScreenshotBlocking = true
 
     fun getEncodedBitmap(): Bitmap? = encodedBitmap
+
+    init {
+        viewModelScope.launch {
+            settingsRepository.settings.collect { settings ->
+                currentDefaultSecureView = settings.defaultSecureView
+                currentDefaultScreenshotBlocking = settings.defaultScreenshotBlocking
+                if (!defaultsApplied) {
+                    _uiState.update {
+                        it.copy(
+                            revealFlags = it.revealFlags.copy(
+                                secureView = settings.defaultSecureView,
+                                blockScreenshots = settings.defaultScreenshotBlocking
+                            )
+                        )
+                    }
+                    defaultsApplied = true
+                }
+            }
+        }
+    }
 
     fun setCoverImage(uri: Uri) {
         viewModelScope.launch {
@@ -137,6 +164,10 @@ class HideSecretsViewModel(application: Application) : AndroidViewModel(applicat
         recalculateCapacity()
     }
 
+    fun setOutputFileName(name: String) {
+        _uiState.update { it.copy(outputFileName = name, encodingResult = null) }
+    }
+
     fun setEmbeddingMode(mode: EmbeddingMode) {
         _uiState.update { it.copy(embeddingMode = mode, encodingResult = null) }
         recalculateCapacity()
@@ -226,16 +257,38 @@ class HideSecretsViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun saveToGallery() {
+    fun saveOutput() {
         val bitmap = encodedBitmap ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             try {
-                val fileName = "ghostmask_${System.currentTimeMillis()}.png"
-                val uri = FileSaveManager.savePngToGallery(getApplication(), bitmap, fileName)
+                val fileName = FileSaveManager.sanitizeOutputName(_uiState.value.outputFileName)
+                val settings = settingsRepository.settings.first()
+                val uri = if (settings.saveToPrivateStorage) {
+                    FileSaveManager.savePngToPrivateStorage(getApplication(), bitmap, fileName).uri
+                } else {
+                    FileSaveManager.savePngToGallery(getApplication(), bitmap, fileName)
+                }
                 _uiState.update { it.copy(isSaving = false, encodingResult = EncodingResult.Saved(uri)) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Save failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun exportToGallery() {
+        val bitmap = encodedBitmap ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val uri = FileSaveManager.savePngToGallery(
+                    getApplication(),
+                    bitmap,
+                    FileSaveManager.sanitizeOutputName(_uiState.value.outputFileName)
+                )
+                _uiState.update { it.copy(isSaving = false, encodingResult = EncodingResult.Saved(uri)) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isSaving = false, errorMessage = "Export failed: ${e.message}") }
             }
         }
     }
@@ -244,7 +297,7 @@ class HideSecretsViewModel(application: Application) : AndroidViewModel(applicat
         val bitmap = encodedBitmap ?: return
         viewModelScope.launch {
             try {
-                val fileName = "ghostmask_${System.currentTimeMillis()}.png"
+                val fileName = FileSaveManager.sanitizeOutputName(_uiState.value.outputFileName)
                 val intent = ShareManager.createShareIntent(getApplication(), bitmap, fileName)
                 onIntentReady(intent)
             } catch (e: Exception) {
@@ -253,11 +306,44 @@ class HideSecretsViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun sendEmail(onIntentReady: (Intent) -> Unit) {
+        val bitmap = encodedBitmap ?: return
+        viewModelScope.launch {
+            try {
+                val fileName = FileSaveManager.sanitizeOutputName(_uiState.value.outputFileName)
+                onIntentReady(ShareManager.createEmailIntent(getApplication(), bitmap, fileName))
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Email share failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun openInFiles(onIntentReady: (Intent) -> Unit) {
+        val bitmap = encodedBitmap ?: return
+        viewModelScope.launch {
+            try {
+                val handle = FileSaveManager.savePngToPrivateStorage(
+                    getApplication(),
+                    bitmap,
+                    FileSaveManager.sanitizeOutputName(_uiState.value.outputFileName)
+                )
+                onIntentReady(FileSaveManager.createOpenFileIntent(handle.uri))
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Open in files failed: ${e.message}") }
+            }
+        }
+    }
+
     fun reset() {
         coverBitmap = null
         secretImageBitmap = null
         encodedBitmap = null
-        _uiState.value = HideSecretsUiState()
+        _uiState.value = HideSecretsUiState(
+            revealFlags = RevealFlagsUiState(
+                secureView = currentDefaultSecureView,
+                blockScreenshots = currentDefaultScreenshotBlocking
+            )
+        )
     }
 
     private fun validate(state: HideSecretsUiState): String? {
@@ -305,6 +391,8 @@ class HideSecretsViewModel(application: Application) : AndroidViewModel(applicat
             meta = GhostMeta(
                 payloadType = payloadType,
                 createdAtEpochMs = System.currentTimeMillis(),
+                textLength = textBytes?.size ?: 0,
+                imageLength = imageBytes?.size ?: 0,
                 compressionEnabled = state.compressionEnabled,
                 expiryEpochMs = if (state.expiryEnabled) state.expiryEpochMs else null,
                 flags = flags,
@@ -332,6 +420,7 @@ data class HideSecretsUiState(
     val password: String = "",
     val confirmPassword: String = "",
     val senderLabel: String = "",
+    val outputFileName: String = "ghostmask_secret",
     val compressionEnabled: Boolean = true,
     val expiryEnabled: Boolean = false,
     val expiryEpochMs: Long? = null,

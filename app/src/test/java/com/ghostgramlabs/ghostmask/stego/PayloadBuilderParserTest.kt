@@ -27,6 +27,8 @@ class PayloadBuilderParserTest {
             meta = GhostMeta(
                 payloadType = payloadType,
                 createdAtEpochMs = 123456789L,
+                textLength = text?.toByteArray()?.size ?: 0,
+                imageLength = imageBytes?.size ?: 0,
                 compressionEnabled = compressionEnabled,
                 expiryEpochMs = 987654321L,
                 flags = RevealFlags(

@@ -14,6 +14,8 @@ data class GhostMeta(
     val version: Int = CURRENT_VERSION,
     val payloadType: PayloadType,
     val createdAtEpochMs: Long,
+    val textLength: Int = 0,
+    val imageLength: Int = 0,
     val compressionEnabled: Boolean,
     val expiryEpochMs: Long? = null,
     val flags: RevealFlags = RevealFlags(),

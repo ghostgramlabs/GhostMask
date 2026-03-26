@@ -2,11 +2,13 @@ package com.ghostgramlabs.ghostmask.util
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -16,6 +18,11 @@ import java.io.FileOutputStream
  * Manages saving encoded PNG images to device storage and cache.
  */
 object FileSaveManager {
+
+    data class PrivateEncodedFile(
+        val file: File,
+        val uri: Uri
+    )
 
     /**
      * Saves a bitmap as PNG to the Pictures/GhostMask directory using MediaStore.
@@ -73,6 +80,18 @@ object FileSaveManager {
         }
     }
 
+    suspend fun savePngToPrivateStorage(context: Context, bitmap: Bitmap, fileName: String): PrivateEncodedFile {
+        return withContext(Dispatchers.IO) {
+            val sanitizedName = sanitizeOutputName(fileName)
+            val encodedDir = File(context.filesDir, "encoded").apply { mkdirs() }
+            val file = File(encodedDir, sanitizedName)
+            FileOutputStream(file).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+            }
+            PrivateEncodedFile(file = file, uri = getContentUriForFile(context, file))
+        }
+    }
+
     /**
      * Saves raw image bytes to the Pictures/GhostMask directory.
      * Used for saving revealed secret images.
@@ -115,5 +134,36 @@ object FileSaveManager {
 
             uri
         }
+    }
+
+    fun listPrivateEncodedFiles(context: Context): List<PrivateEncodedFile> {
+        val encodedDir = File(context.filesDir, "encoded")
+        return encodedDir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("png", ignoreCase = true) }
+            ?.sortedByDescending { it.lastModified() }
+            ?.map { PrivateEncodedFile(it, getContentUriForFile(context, it)) }
+            .orEmpty()
+    }
+
+    fun createOpenFileIntent(uri: Uri): Intent {
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "image/png")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    fun sanitizeOutputName(input: String): String {
+        val trimmed = input.trim().ifBlank { "ghostmask_${System.currentTimeMillis()}" }
+        val safe = trimmed.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_')
+        val normalized = if (safe.isBlank()) "ghostmask_${System.currentTimeMillis()}" else safe
+        return if (normalized.endsWith(".png", ignoreCase = true)) normalized else "$normalized.png"
+    }
+
+    private fun getContentUriForFile(context: Context, file: File): Uri {
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
     }
 }

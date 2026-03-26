@@ -1,5 +1,8 @@
 package com.ghostgramlabs.ghostmask.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -46,13 +49,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.ghostgramlabs.ghostmask.domain.model.EmbeddingMode
 import com.ghostgramlabs.ghostmask.domain.model.PayloadType
 import com.ghostgramlabs.ghostmask.ui.components.CapacityMeter
+import com.ghostgramlabs.ghostmask.ui.components.FormSectionCard
 import com.ghostgramlabs.ghostmask.ui.components.GradientButton
 import com.ghostgramlabs.ghostmask.ui.components.GhostMaskTitle
 import com.ghostgramlabs.ghostmask.ui.components.ImagePickerCard
 import com.ghostgramlabs.ghostmask.ui.components.PasswordField
+import com.ghostgramlabs.ghostmask.ui.components.PillLabel
 import com.ghostgramlabs.ghostmask.ui.theme.DarkSurface
 import com.ghostgramlabs.ghostmask.ui.theme.DarkSurfaceElevated
 import com.ghostgramlabs.ghostmask.ui.theme.ErrorRed
@@ -112,116 +118,204 @@ fun HideSecretsScreen(
             if (encodingResult != null) {
                 SuccessSection(
                     result = encodingResult,
-                    onSave = viewModel::saveToGallery,
+                    onSave = viewModel::saveOutput,
+                    onExport = viewModel::exportToGallery,
                     onShare = {
                         viewModel.share { intent -> context.startActivity(intent) }
+                    },
+                    onEmail = {
+                        viewModel.sendEmail { intent -> context.startActivity(Intent.createChooser(intent, "Send encoded PNG")) }
+                    },
+                    onOpenInFiles = {
+                        viewModel.openInFiles { intent -> ContextCompat.startActivity(context, intent, null) }
+                    },
+                    onCopyReminder = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(
+                            ClipData.newPlainText(
+                                "GhostMask reminder",
+                                "Share this encoded image as PNG only. Recompression can destroy the hidden payload."
+                            )
+                        )
                     },
                     onNewEncoding = viewModel::reset,
                     isSaving = uiState.isSaving
                 )
             } else {
-                Text("Cover Image", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                ImagePickerCard(
-                    imageUri = uiState.coverImageUri,
-                    label = "PNG or image to use as the visible cover",
-                    icon = Icons.Default.Image,
-                    onClick = {
-                        coverImagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    }
-                )
-
-                if (uiState.coverImageUri != null) {
-                    Text(
-                        "${uiState.coverWidth} x ${uiState.coverHeight} px",
-                        color = TextMuted,
-                        style = MaterialTheme.typography.bodySmall
+                PillLabel("Hide Workflow")
+                FormSectionCard(
+                    title = "Cover Image",
+                    subtitle = "Choose the ordinary image that will carry the encrypted payload."
+                ) {
+                    ImagePickerCard(
+                        imageUri = uiState.coverImageUri,
+                        label = "PNG or image to use as the visible cover",
+                        icon = Icons.Default.Image,
+                        onClick = {
+                            coverImagePicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
                     )
-                }
 
-                HorizontalDivider(color = DarkSurfaceElevated)
-
-                Text("Hide Mode", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PayloadType.entries.forEach { type ->
-                        FilterChip(
-                            selected = uiState.payloadType == type,
-                            onClick = { viewModel.setPayloadType(type) },
-                            label = { Text(type.name.lowercase().replaceFirstChar(Char::uppercase)) }
+                    if (uiState.coverImageUri != null) {
+                        Text(
+                            "${uiState.coverWidth} x ${uiState.coverHeight} px",
+                            color = TextMuted,
+                            style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
 
-                if (uiState.payloadType != PayloadType.IMAGE) {
+                FormSectionCard(
+                    title = "Secret Payload",
+                    subtitle = "Choose what you want to hide and prepare the payload."
+                ) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PayloadType.entries.forEach { type ->
+                            FilterChip(
+                                selected = uiState.payloadType == type,
+                                onClick = { viewModel.setPayloadType(type) },
+                                label = { Text(type.name.lowercase().replaceFirstChar(Char::uppercase)) }
+                            )
+                        }
+                    }
+
+                    if (uiState.payloadType != PayloadType.IMAGE) {
+                        OutlinedTextField(
+                            value = uiState.secretText,
+                            onValueChange = viewModel::setSecretText,
+                            label = { Text("Secret text") },
+                            placeholder = { Text("Enter the hidden message") },
+                            minLines = 4,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+
+                    if (uiState.payloadType != PayloadType.TEXT) {
+                        ImagePickerCard(
+                            imageUri = uiState.secretImageUri,
+                            label = "Secret image",
+                            icon = Icons.Default.HideImage,
+                            onClick = {
+                                secretImagePicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            onClear = if (uiState.secretImageUri != null) viewModel::clearSecretImage else null
+                        )
+                    }
+                }
+
+                FormSectionCard(
+                    title = "Password & Output",
+                    subtitle = "Set the protection password and name the encoded PNG."
+                ) {
+                    PasswordField(value = uiState.password, onValueChange = viewModel::setPassword)
+                    PasswordField(
+                        value = uiState.confirmPassword,
+                        onValueChange = viewModel::setConfirmPassword,
+                        label = "Confirm password"
+                    )
+
                     OutlinedTextField(
-                        value = uiState.secretText,
-                        onValueChange = viewModel::setSecretText,
-                        label = { Text("Secret text") },
-                        placeholder = { Text("Enter the hidden message") },
-                        minLines = 3,
+                        value = uiState.senderLabel,
+                        onValueChange = viewModel::setSenderLabel,
+                        label = { Text("Sender label (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.outputFileName,
+                        onValueChange = viewModel::setOutputFileName,
+                        label = { Text("Output PNG name") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
 
-                if (uiState.payloadType != PayloadType.TEXT) {
-                    ImagePickerCard(
-                        imageUri = uiState.secretImageUri,
-                        label = "Secret image",
-                        icon = Icons.Default.HideImage,
-                        onClick = {
-                            secretImagePicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                FormSectionCard(
+                    title = "Embedding Strength",
+                    subtitle = "Choose the balance between stealth and capacity."
+                ) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EmbeddingMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = uiState.embeddingMode == mode,
+                                onClick = { viewModel.setEmbeddingMode(mode) },
+                                label = { Text("${mode.label} (${mode.lsbBits}-bit)") }
                             )
-                        },
-                        onClear = if (uiState.secretImageUri != null) viewModel::clearSecretImage else null
-                    )
-                }
+                        }
+                    }
 
-                HorizontalDivider(color = DarkSurfaceElevated)
-
-                PasswordField(value = uiState.password, onValueChange = viewModel::setPassword)
-                PasswordField(
-                    value = uiState.confirmPassword,
-                    onValueChange = viewModel::setConfirmPassword,
-                    label = "Confirm password"
-                )
-
-                OutlinedTextField(
-                    value = uiState.senderLabel,
-                    onValueChange = viewModel::setSenderLabel,
-                    label = { Text("Sender label (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Text("Embedding Strength", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EmbeddingMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = uiState.embeddingMode == mode,
-                            onClick = { viewModel.setEmbeddingMode(mode) },
-                            label = { Text("${mode.label} (${mode.lsbBits}-bit)") }
-                        )
+                    uiState.embeddingMode.warning?.let { warning ->
+                        AssistChip(onClick = {}, label = { Text(warning) })
                     }
                 }
 
-                uiState.embeddingMode.warning?.let { warning ->
-                    AssistChip(onClick = {}, label = { Text(warning) })
-                }
-
-                SettingsCard(title = "Advanced Protection") {
-                    ToggleRow("Secure view", uiState.revealFlags.secureView, viewModel::setSecureView)
-                    ToggleRow("Block screenshots", uiState.revealFlags.blockScreenshots, viewModel::setBlockScreenshots)
-                    ToggleRow("Hide from recents", uiState.revealFlags.hideFromRecents, viewModel::setHideFromRecents)
-                    ToggleRow("Clear on close", uiState.revealFlags.clearOnClose, viewModel::setClearOnClose)
-                    ToggleRow("Clear on background", uiState.revealFlags.clearOnBackground, viewModel::setClearOnBackground)
-                    ToggleRow("One-time reveal", uiState.revealFlags.oneTimeReveal, viewModel::setOneTimeReveal)
-                    ToggleRow("Biometric before reveal", uiState.revealFlags.requireBiometric, viewModel::setRequireBiometric)
-                    ToggleRow("Delete encoded file after reveal", uiState.revealFlags.deleteEncodedAfterReveal, viewModel::setDeleteEncodedAfterReveal)
-                    ToggleRow("Compression", uiState.compressionEnabled, viewModel::setCompressionEnabled)
-                    ToggleRow("Enable expiry", uiState.expiryEnabled, viewModel::setExpiryEnabled)
+                SettingsCard(title = "Protection Rules") {
+                    ToggleRow(
+                        "Secure view",
+                        uiState.revealFlags.secureView,
+                        viewModel::setSecureView,
+                        "Applies protected viewing behavior on the reveal screen."
+                    )
+                    ToggleRow(
+                        "Block screenshots",
+                        uiState.revealFlags.blockScreenshots,
+                        viewModel::setBlockScreenshots,
+                        "Helps block screenshots and screen recording while the secret is open."
+                    )
+                    ToggleRow(
+                        "Hide from recents",
+                        uiState.revealFlags.hideFromRecents,
+                        viewModel::setHideFromRecents,
+                        "Reduces what appears in app switcher previews."
+                    )
+                    ToggleRow(
+                        "Clear on close",
+                        uiState.revealFlags.clearOnClose,
+                        viewModel::setClearOnClose,
+                        "Wipes the revealed content when the reveal screen is closed."
+                    )
+                    ToggleRow(
+                        "Clear on background",
+                        uiState.revealFlags.clearOnBackground,
+                        viewModel::setClearOnBackground,
+                        "Clears the secret as soon as the app leaves the foreground."
+                    )
+                    ToggleRow(
+                        "One-time reveal",
+                        uiState.revealFlags.oneTimeReveal,
+                        viewModel::setOneTimeReveal,
+                        "Prevents reopening the same secret again on this device after one reveal."
+                    )
+                    ToggleRow(
+                        "Biometric before reveal",
+                        uiState.revealFlags.requireBiometric,
+                        viewModel::setRequireBiometric,
+                        "Requires device authentication after the password is correct."
+                    )
+                    ToggleRow(
+                        "Delete encoded file after reveal",
+                        uiState.revealFlags.deleteEncodedAfterReveal,
+                        viewModel::setDeleteEncodedAfterReveal,
+                        "Deletes the selected encoded source image when the reveal session ends."
+                    )
+                    ToggleRow(
+                        "Compression",
+                        uiState.compressionEnabled,
+                        viewModel::setCompressionEnabled,
+                        "Compresses the hidden payload before encryption to save space."
+                    )
+                    ToggleRow(
+                        "Enable expiry",
+                        uiState.expiryEnabled,
+                        viewModel::setExpiryEnabled,
+                        "Blocks reveal after the chosen expiry time passes."
+                    )
                     if (uiState.expiryEnabled) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(
@@ -237,7 +331,12 @@ fun HideSecretsScreen(
                             }
                         }
                     }
-                    ToggleRow("Self-destruct timer", uiState.selfDestructEnabled, viewModel::setSelfDestructEnabled)
+                    ToggleRow(
+                        "Self-destruct timer",
+                        uiState.selfDestructEnabled,
+                        viewModel::setSelfDestructEnabled,
+                        "Automatically clears the secret after a countdown."
+                    )
                     if (uiState.selfDestructEnabled) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(10, 30, 60, 300).forEach { seconds ->
@@ -252,13 +351,18 @@ fun HideSecretsScreen(
                 }
 
                 uiState.capacityInfo?.let { capacityInfo ->
-                    CapacityMeter(capacityInfo = capacityInfo)
-                    if (!capacityInfo.fits && capacityInfo.recommendedLsbBits > capacityInfo.lsbBits) {
-                        Text(
-                            "Recommended: switch to ${capacityInfo.recommendedLsbBits}-bit embedding for this payload.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = WarningYellow
-                        )
+                    FormSectionCard(
+                        title = "Capacity Check",
+                        subtitle = "Make sure the cover image can safely hold the encrypted payload."
+                    ) {
+                        CapacityMeter(capacityInfo = capacityInfo)
+                        if (!capacityInfo.fits && capacityInfo.recommendedLsbBits > capacityInfo.lsbBits) {
+                            Text(
+                                "Recommended: switch to ${capacityInfo.recommendedLsbBits}-bit embedding for this payload.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = WarningYellow
+                            )
+                        }
                     }
                 }
 
@@ -298,13 +402,24 @@ private fun SettingsCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun ToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    subtitle: String? = null
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, color = TextSecondary, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = TextSecondary)
+            subtitle?.let {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(it, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
@@ -341,7 +456,11 @@ private fun InfoCard(text: String) {
 private fun SuccessSection(
     result: EncodingResult,
     onSave: () -> Unit,
+    onExport: () -> Unit,
     onShare: () -> Unit,
+    onEmail: () -> Unit,
+    onOpenInFiles: () -> Unit,
+    onCopyReminder: () -> Unit,
     onNewEncoding: () -> Unit,
     isSaving: Boolean
 ) {
@@ -361,7 +480,11 @@ private fun SuccessSection(
                 style = MaterialTheme.typography.titleMedium
             )
             GradientButton(text = "Save PNG", onClick = onSave, enabled = !isSaving, isLoading = isSaving)
+            TextButton(onClick = onExport) { Text("Export to gallery", color = Purple60) }
             TextButton(onClick = onShare) { Text("Share PNG", color = Purple60) }
+            TextButton(onClick = onEmail) { Text("Send via email", color = Purple60) }
+            TextButton(onClick = onOpenInFiles) { Text("Open in files", color = Purple60) }
+            TextButton(onClick = onCopyReminder) { Text("Copy safe reminder", color = Purple60) }
             TextButton(onClick = onNewEncoding) { Text("Create another", color = TextSecondary) }
         }
     }

@@ -1,11 +1,15 @@
 package com.ghostgramlabs.ghostmask.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ghostgramlabs.ghostmask.data.reveal.EncodedFileFingerprintStore
+import com.ghostgramlabs.ghostmask.data.reveal.RecentEncodedFilesStore
+import com.ghostgramlabs.ghostmask.data.settings.AppSettingsRepository
 import com.ghostgramlabs.ghostmask.domain.model.GhostMeta
 import com.ghostgramlabs.ghostmask.domain.reveal.RevealPolicyEnforcer
 import com.ghostgramlabs.ghostmask.domain.reveal.RevealPrecheckResult
@@ -23,11 +27,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RevealSecretsViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val settingsRepository = AppSettingsRepository(application)
+    private val recentFilesStore = RecentEncodedFilesStore(application)
     private val tempFileManager = TempFileManager(application)
     private val policyEnforcer = RevealPolicyEnforcer(
         fingerprintStore = EncodedFileFingerprintStore(application),
@@ -42,6 +49,7 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
     private var revealedImageBytes: ByteArray? = null
     private var pendingReveal: PendingReveal? = null
     private var timerJob: Job? = null
+    private var pendingDeleteAfterSessionUri: Uri? = null
 
     fun getRevealedImageBitmap(): Bitmap? = revealedImageBitmap
 
@@ -56,6 +64,14 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
                 )
             }
             try {
+                try {
+                    getApplication<Application>().contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (_: Exception) {
+                    // Some providers do not support persistable write permission.
+                }
                 val bitmap = BitmapUtils.loadBitmap(getApplication(), uri, maxDimension = 0)
                 if (bitmap == null) {
                     _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load image.") }
@@ -64,6 +80,10 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
                 encodedBitmap = bitmap
                 clearRevealSession()
                 _uiState.update { it.copy(encodedImageUri = uri, isLoading = false, password = "") }
+                val settings = settingsRepository.settings.first()
+                if (settings.rememberRecentEncodedFiles) {
+                    recentFilesStore.remember(uri)
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Error loading image: ${e.message}") }
             }
@@ -169,11 +189,15 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
                     meta = meta
                 ),
                 countdownRemainingSeconds = meta.flags.selfDestructSeconds,
-                pendingDeleteConfirmation = meta.flags.deleteEncodedAfterReveal && reveal.encodedUri != null,
-                errorMessage = null,
+                errorMessage = if (meta.flags.deleteEncodedAfterReveal) {
+                    "Encoded source image will be deleted when this reveal session ends."
+                } else {
+                    null
+                },
                 revealMasked = false
             )
         }
+        pendingDeleteAfterSessionUri = if (meta.flags.deleteEncodedAfterReveal) reveal.encodedUri else null
         pendingReveal = null
         startCountdownIfNeeded(meta)
     }
@@ -207,34 +231,27 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun confirmDeleteEncodedFile(confirm: Boolean) {
-        val uri = _uiState.value.encodedImageUri ?: run {
-            _uiState.update { it.copy(pendingDeleteConfirmation = false) }
-            return
-        }
-
-        if (!confirm) {
-            _uiState.update { it.copy(pendingDeleteConfirmation = false) }
-            return
-        }
-
-        viewModelScope.launch {
-            try {
-                val deleted = getApplication<Application>().contentResolver.delete(uri, null, null) > 0
-                _uiState.update {
-                    it.copy(
-                        pendingDeleteConfirmation = false,
-                        errorMessage = if (deleted) null else "Secret opened, but the encoded file could not be deleted."
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        pendingDeleteConfirmation = false,
-                        errorMessage = "Secret opened, but the encoded file could not be deleted."
-                    )
+    private suspend fun deleteEncodedFileIfNeeded(existingMessage: String?): String? {
+        val uri = pendingDeleteAfterSessionUri ?: return existingMessage
+        pendingDeleteAfterSessionUri = null
+        return try {
+            val resolver = getApplication<Application>().contentResolver
+            val deleted = try {
+                resolver.delete(uri, null, null) > 0
+            } catch (_: SecurityException) {
+                try {
+                    DocumentsContract.deleteDocument(resolver, uri)
+                } catch (_: Exception) {
+                    false
                 }
             }
+            if (deleted) {
+                "Encoded source image deleted after reveal."
+            } else {
+                existingMessage ?: "Secret opened, but GhostMask does not have permission to delete that selected file."
+            }
+        } catch (_: Exception) {
+            existingMessage ?: "Secret opened, but GhostMask does not have permission to delete that selected file."
         }
     }
 
@@ -285,6 +302,7 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
         revealedImageBitmap = null
         revealedImageBytes = null
         policyEnforcer.clearSensitiveArtifacts()
+        val finalMessage = deleteEncodedFileIfNeeded(message)
         _uiState.update {
             it.copy(
                 isDecoding = false,
@@ -295,7 +313,7 @@ class RevealSecretsViewModel(application: Application) : AndroidViewModel(applic
                 pendingBiometricPrompt = false,
                 pendingDeleteConfirmation = false,
                 revealMasked = false,
-                errorMessage = message ?: it.errorMessage
+                errorMessage = finalMessage ?: it.errorMessage
             )
         }
     }
