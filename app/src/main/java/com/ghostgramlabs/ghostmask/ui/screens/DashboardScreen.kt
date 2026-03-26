@@ -1,29 +1,60 @@
 package com.ghostgramlabs.ghostmask.ui.screens
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.ghostgramlabs.ghostmask.ui.theme.*
+import com.ghostgramlabs.ghostmask.ui.components.GhostMaskBrandIcon
+import com.ghostgramlabs.ghostmask.ui.theme.DarkCard
+import com.ghostgramlabs.ghostmask.ui.theme.DarkSurface
+import com.ghostgramlabs.ghostmask.ui.theme.DarkSurfaceVariant
+import com.ghostgramlabs.ghostmask.ui.theme.NeonBlue
+import com.ghostgramlabs.ghostmask.ui.theme.NeonMint
+import com.ghostgramlabs.ghostmask.ui.theme.NeonPink
+import com.ghostgramlabs.ghostmask.ui.theme.NeonViolet
+import com.ghostgramlabs.ghostmask.ui.theme.TextMuted
+import com.ghostgramlabs.ghostmask.ui.theme.TextPrimary
+import com.ghostgramlabs.ghostmask.ui.theme.TextSecondary
 
-/**
- * Dashboard screen with two primary actions: Hide Secrets and Reveal Secrets.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -42,41 +73,38 @@ fun DashboardScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(DarkSurface, DarkSurfaceVariant, DarkSurface)
+                    )
+                )
                 .padding(padding)
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(40.dp))
-
-            // App icon / title area
-            Text(
-                text = "👻",
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontSize = MaterialTheme.typography.headlineLarge.fontSize * 2
-                )
-            )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(36.dp))
+            GhostMaskBrandIcon(modifier = Modifier.padding(8.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 text = "GhostMask",
                 style = MaterialTheme.typography.headlineLarge,
                 color = TextPrimary
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = "Hide secrets inside images",
+                text = "Mystery neon steganography for text, images, and locked reveals",
                 style = MaterialTheme.typography.bodyLarge,
                 color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(56.dp))
+            Spacer(Modifier.height(52.dp))
 
-            // Action cards
             DashboardActionCard(
                 title = "Hide Secrets",
-                subtitle = "Encrypt and embed secrets into a cover image",
+                subtitle = "Encrypt, tag with reveal rules, and embed into a cover image",
                 icon = Icons.Default.Lock,
-                gradientColors = listOf(Purple40, Purple20),
+                gradientColors = listOf(NeonPink, NeonBlue),
                 onClick = onHideSecrets
             )
 
@@ -84,17 +112,16 @@ fun DashboardScreen(
 
             DashboardActionCard(
                 title = "Reveal Secrets",
-                subtitle = "Extract and decrypt hidden secrets from an image",
+                subtitle = "Decrypt and enforce the hidden secret's neon lock rules",
                 icon = Icons.Default.LockOpen,
-                gradientColors = listOf(Teal40, Teal20),
+                gradientColors = listOf(NeonMint, NeonViolet),
                 onClick = onRevealSecrets
             )
 
             Spacer(Modifier.weight(1f))
 
-            // Footer note
             Text(
-                text = "Image steganography works best with locally saved PNGs.\nSome apps may compress images and destroy hidden data.",
+                text = "GhostMask stays offline. Save encoded secrets as PNGs and avoid apps that recompress images.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted,
                 textAlign = TextAlign.Center,
@@ -112,7 +139,6 @@ private fun DashboardActionCard(
     gradientColors: List<Color>,
     onClick: () -> Unit
 ) {
-    // Subtle scale animation on click
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.97f else 1f,
@@ -123,20 +149,39 @@ private fun DashboardActionCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .shadow(24.dp, RoundedCornerShape(24.dp), ambientColor = gradientColors.last().copy(alpha = 0.22f), spotColor = gradientColors.first().copy(alpha = 0.18f))
             .scale(scale)
             .clickable {
                 pressed = true
                 onClick()
             },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        border = BorderStroke(1.dp, gradientColors.last().copy(alpha = 0.38f))
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    brush = Brush.horizontalGradient(gradientColors),
-                    shape = RoundedCornerShape(20.dp)
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            gradientColors.first().copy(alpha = 0.95f),
+                            gradientColors.last().copy(alpha = 0.65f),
+                            DarkCard
+                        )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.4f),
+                            gradientColors.last().copy(alpha = 0.42f),
+                            gradientColors.first().copy(alpha = 0.18f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
                 )
                 .padding(24.dp)
         ) {
@@ -145,20 +190,15 @@ private fun DashboardActionCard(
                     imageVector = icon,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.padding(end = 16.dp)
                 )
-                Spacer(Modifier.width(16.dp))
                 Column {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White
-                    )
+                    Text(text = title, style = MaterialTheme.typography.titleLarge, color = Color.White)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.8f)
+                        color = Color.White.copy(alpha = 0.84f)
                     )
                 }
             }

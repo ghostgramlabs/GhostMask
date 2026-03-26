@@ -16,9 +16,10 @@ object CapacityCalculator {
      * Returns the maximum payload size in bytes that can be hidden
      * in an image of the given dimensions.
      */
-    fun calculateCapacity(width: Int, height: Int): Int {
+    fun calculateCapacity(width: Int, height: Int, lsbBits: Int = 1): Int {
         if (width <= 0 || height <= 0) return 0
-        val totalBits = width.toLong() * height.toLong() * 3L
+        val normalizedLsbBits = lsbBits.coerceIn(1, 3)
+        val totalBits = width.toLong() * height.toLong() * 3L * normalizedLsbBits
         val totalBytes = (totalBits / 8L).toInt()
         return maxOf(0, totalBytes - SIZE_HEADER_BYTES)
     }
@@ -27,23 +28,29 @@ object CapacityCalculator {
      * Checks whether a payload of [payloadSize] bytes can fit
      * inside an image of the given dimensions.
      */
-    fun canFit(width: Int, height: Int, payloadSize: Int): Boolean {
-        return payloadSize <= calculateCapacity(width, height)
+    fun canFit(width: Int, height: Int, payloadSize: Int, lsbBits: Int = 1): Boolean {
+        return payloadSize <= calculateCapacity(width, height, lsbBits)
     }
 
     /**
      * Returns a human-readable capacity summary.
      */
-    fun capacitySummary(width: Int, height: Int, payloadSize: Int): CapacityInfo {
-        val capacity = calculateCapacity(width, height)
+    fun capacitySummary(width: Int, height: Int, payloadSize: Int, lsbBits: Int = 1): CapacityInfo {
+        val capacity = calculateCapacity(width, height, lsbBits)
         val usageRatio = if (capacity > 0) payloadSize.toFloat() / capacity else 1f
         return CapacityInfo(
             totalBytes = capacity,
             usedBytes = payloadSize,
             remainingBytes = maxOf(0, capacity - payloadSize),
             usageRatio = usageRatio.coerceIn(0f, 1f),
-            fits = payloadSize <= capacity
+            fits = payloadSize <= capacity,
+            lsbBits = lsbBits.coerceIn(1, 3),
+            recommendedLsbBits = recommendLsbBits(width, height, payloadSize)
         )
+    }
+
+    fun recommendLsbBits(width: Int, height: Int, payloadSize: Int): Int {
+        return (1..3).firstOrNull { canFit(width, height, payloadSize, it) } ?: 3
     }
 }
 
@@ -55,5 +62,7 @@ data class CapacityInfo(
     val usedBytes: Int,
     val remainingBytes: Int,
     val usageRatio: Float,
-    val fits: Boolean
+    val fits: Boolean,
+    val lsbBits: Int,
+    val recommendedLsbBits: Int = lsbBits
 )

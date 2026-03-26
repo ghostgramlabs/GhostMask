@@ -22,12 +22,13 @@ object StegoEncoder {
      * @return A new Bitmap with the payload embedded
      * @throws PayloadTooLargeException if the payload exceeds capacity
      */
-    fun encode(coverBitmap: Bitmap, payload: ByteArray): Bitmap {
+    fun encode(coverBitmap: Bitmap, payload: ByteArray, lsbBits: Int = 1): Bitmap {
         val width = coverBitmap.width
         val height = coverBitmap.height
+        val normalizedLsbBits = lsbBits.coerceIn(1, 3)
 
-        if (!CapacityCalculator.canFit(width, height, payload.size)) {
-            val capacity = CapacityCalculator.calculateCapacity(width, height)
+        if (!CapacityCalculator.canFit(width, height, payload.size, normalizedLsbBits)) {
+            val capacity = CapacityCalculator.calculateCapacity(width, height, normalizedLsbBits)
             throw PayloadTooLargeException(
                 "Payload (${payload.size} bytes) exceeds cover image capacity ($capacity bytes). " +
                         "Need ${payload.size - capacity} more bytes of capacity."
@@ -46,12 +47,9 @@ object StegoEncoder {
         )
         val fullData = lengthBytes + payload
 
-        val writer = BitmapBitWriter(result)
+        val writer = BitmapBitWriter(result, normalizedLsbBits)
         for (byte in fullData) {
-            for (bit in 7 downTo 0) {
-                val bitValue = (byte.toInt() shr bit) and 1
-                writer.writeBit(bitValue)
-            }
+            writer.writeByte(byte.toInt() and 0xFF)
         }
 
         return result
@@ -70,8 +68,8 @@ object StegoDecoder {
      * @return The extracted payload bytes
      * @throws InvalidPayloadException if the image doesn't contain valid data
      */
-    fun decode(stegoBitmap: Bitmap): ByteArray {
-        val reader = BitmapBitReader(stegoBitmap)
+    fun decode(stegoBitmap: Bitmap, lsbBits: Int = 1): ByteArray {
+        val reader = BitmapBitReader(stegoBitmap, lsbBits.coerceIn(1, 3))
 
         // Read 4-byte length header (32 bits)
         var length = 0
@@ -80,7 +78,7 @@ object StegoDecoder {
         }
 
         // Sanity check the length
-        val maxCapacity = CapacityCalculator.calculateCapacity(stegoBitmap.width, stegoBitmap.height)
+        val maxCapacity = CapacityCalculator.calculateCapacity(stegoBitmap.width, stegoBitmap.height, lsbBits)
         if (length < 0 || length > maxCapacity) {
             throw InvalidPayloadException(
                 "Invalid payload length ($length). This image may not contain GhostMask data."
@@ -99,18 +97,56 @@ object StegoDecoder {
 
         return payload
     }
+
+    fun decodeWithAutoDetect(stegoBitmap: Bitmap): StegoExtractionResult {
+        var lastError: Exception? = null
+        for (bits in 1..3) {
+            try {
+                val candidate = decode(stegoBitmap, bits)
+                if (PayloadBuilder.hasMagicPrefix(candidate)) {
+                    return StegoExtractionResult(candidate, bits)
+                }
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        throw InvalidPayloadException(lastError?.message ?: "No GhostMask payload found in this image.")
+    }
 }
+
+data class StegoExtractionResult(
+    val payload: ByteArray,
+    val lsbBits: Int
+)
 
 /**
  * Writes individual bits into the LSBs of a Bitmap's RGB channels.
  * Iterates pixels left-to-right, top-to-bottom: R, G, B per pixel.
  */
-class BitmapBitWriter(private val bitmap: Bitmap) {
+class BitmapBitWriter(
+    private val bitmap: Bitmap,
+    private val lsbBits: Int
+) {
     private var pixelIndex = 0
     private var channelIndex = 0 // 0=R, 1=G, 2=B
     private val totalPixels = bitmap.width * bitmap.height
 
+    fun writeByte(value: Int) {
+        var remainingBits = 8
+        while (remainingBits > 0) {
+            val bitsToWrite = minOf(lsbBits, remainingBits)
+            val shift = remainingBits - bitsToWrite
+            val chunk = (value shr shift) and ((1 shl bitsToWrite) - 1)
+            writeChunk(chunk)
+            remainingBits -= bitsToWrite
+        }
+    }
+
     fun writeBit(bit: Int) {
+        writeChunk(bit)
+    }
+
+    private fun writeChunk(chunk: Int) {
         if (pixelIndex >= totalPixels) {
             throw PayloadTooLargeException("Ran out of pixels while encoding")
         }
@@ -124,10 +160,11 @@ class BitmapBitWriter(private val bitmap: Bitmap) {
         var g = (pixel shr 8) and 0xFF
         var b = pixel and 0xFF
 
+        val mask = (1 shl lsbBits) - 1
         when (channelIndex) {
-            0 -> r = (r and 0xFE) or bit
-            1 -> g = (g and 0xFE) or bit
-            2 -> b = (b and 0xFE) or bit
+            0 -> r = (r and mask.inv()) or chunk
+            1 -> g = (g and mask.inv()) or chunk
+            2 -> b = (b and mask.inv()) or chunk
         }
 
         bitmap.setPixel(x, y, (a shl 24) or (r shl 16) or (g shl 8) or b)
@@ -144,12 +181,28 @@ class BitmapBitWriter(private val bitmap: Bitmap) {
  * Reads individual bits from the LSBs of a Bitmap's RGB channels.
  * Same iteration order as [BitmapBitWriter]: left-to-right, top-to-bottom, R→G→B.
  */
-class BitmapBitReader(private val bitmap: Bitmap) {
+class BitmapBitReader(
+    private val bitmap: Bitmap,
+    private val lsbBits: Int
+) {
     private var pixelIndex = 0
     private var channelIndex = 0
     private val totalPixels = bitmap.width * bitmap.height
+    private var chunkBuffer = 0
+    private var chunkBitsRemaining = 0
 
     fun readBit(): Int {
+        if (chunkBitsRemaining == 0) {
+            chunkBuffer = readChunk()
+            chunkBitsRemaining = lsbBits
+        }
+
+        val bit = (chunkBuffer shr (chunkBitsRemaining - 1)) and 1
+        chunkBitsRemaining--
+        return bit
+    }
+
+    private fun readChunk(): Int {
         if (pixelIndex >= totalPixels) {
             throw InvalidPayloadException("Ran out of pixels while decoding")
         }
@@ -158,10 +211,11 @@ class BitmapBitReader(private val bitmap: Bitmap) {
         val y = pixelIndex / bitmap.width
         val pixel = bitmap.getPixel(x, y)
 
+        val mask = (1 shl lsbBits) - 1
         val value = when (channelIndex) {
-            0 -> (pixel shr 16) and 1 // R LSB
-            1 -> (pixel shr 8) and 1  // G LSB
-            2 -> pixel and 1          // B LSB
+            0 -> (pixel shr 16) and mask
+            1 -> (pixel shr 8) and mask
+            2 -> pixel and mask
             else -> throw IllegalStateException()
         }
 
@@ -170,7 +224,6 @@ class BitmapBitReader(private val bitmap: Bitmap) {
             channelIndex = 0
             pixelIndex++
         }
-
         return value
     }
 }
