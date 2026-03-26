@@ -2,30 +2,32 @@ package com.ghostgramlabs.ghostmask.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary palette — smoky violet / ghostly purple
-val Purple80 = Color(0xFFD4C1EC)
-val Purple60 = Color(0xFF9B72CF)
-val Purple40 = Color(0xFF6A3EA1)
-val Purple20 = Color(0xFF3D1F6E)
+val NeonMint = Color(0xFF52FFD2)
+val NeonCyan = Color(0xFF68F4FF)
+val NeonBlue = Color(0xFF4B7BFF)
+val NeonViolet = Color(0xFF7A5CFF)
+val NeonPink = Color(0xFFFF63FF)
+val NeonIris = Color(0xFFB28BFF)
 
-// Secondary accent — eerie spectral green
-val Teal80 = Color(0xFFB8F0D8)
-val Teal60 = Color(0xFF5CEBB5)
-val Teal40 = Color(0xFF2BA77E)
-val Teal20 = Color(0xFF1A5C47)
+val Purple80 = Color(0xFFE6D8FF)
+val Purple60 = NeonIris
+val Purple40 = NeonViolet
+val Purple20 = Color(0xFF2E215C)
 
-// Surface & background — midnight abyss
-val DarkSurface = Color(0xFF08060F)
-val DarkSurfaceVariant = Color(0xFF110E1B)
-val DarkSurfaceElevated = Color(0xFF1B1728)
-val DarkCard = Color(0xFF0F0C1A)
+val Teal80 = Color(0xFFC8FFF5)
+val Teal60 = NeonMint
+val Teal40 = NeonCyan
+val Teal20 = Color(0xFF173D43)
 
-// Status colors
-val SuccessGreen = Color(0xFF5CEBB5)  // ghost-green glow
-val WarningYellow = Color(0xFFE5C06E) // amber lantern
-val ErrorRed = Color(0xFFE85D75)      // blood mist
+val DarkSurface = Color(0xFF05030C)
+val DarkSurfaceVariant = Color(0xFF0B0914)
+val DarkSurfaceElevated = Color(0xFF141125)
+val DarkCard = Color(0xFF0A0813)
 
-// Text — pale ghostly whites
-val TextPrimary = Color(0xFFE8E2F0)
-val TextSecondary = Color(0xFF9E93B8)
-val TextMuted = Color(0xFF5C5475)
+val SuccessGreen = NeonMint
+val WarningYellow = Color(0xFFFFC86B)
+val ErrorRed = Color(0xFFFF5E7E)
+
+val TextPrimary = Color(0xFFF6F4FF)
+val TextSecondary = Color(0xFFBAB4D9)
+val TextMuted = Color(0xFF6E6990)

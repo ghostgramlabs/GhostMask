@@ -22,7 +22,7 @@ private val DarkColorScheme = darkColorScheme(
     onSecondary = Color.White,
     secondaryContainer = Teal20,
     onSecondaryContainer = Teal80,
-    tertiary = Teal40,
+    tertiary = NeonPink,
     background = DarkSurface,
     onBackground = TextPrimary,
     surface = DarkSurfaceVariant,
@@ -31,8 +31,8 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = TextSecondary,
     error = ErrorRed,
     onError = Color.White,
-    outline = TextMuted,
-    outlineVariant = Color(0xFF2A2340)
+    outline = NeonBlue.copy(alpha = 0.6f),
+    outlineVariant = Color(0xFF292144)
 )
 
 val GhostMaskTypography = Typography(
