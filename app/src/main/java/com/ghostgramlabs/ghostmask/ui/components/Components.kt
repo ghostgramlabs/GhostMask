@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -105,6 +107,52 @@ fun PasswordField(
             .fillMaxWidth()
             .shadow(12.dp, RoundedCornerShape(14.dp), ambientColor = NeonBlue.copy(alpha = 0.18f), spotColor = NeonPink.copy(alpha = 0.12f))
     )
+}
+
+@Composable
+fun FormSectionCard(
+    title: String,
+    subtitle: String? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkSurfaceElevated.copy(alpha = 0.92f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                    subtitle?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                }
+                content()
+            }
+        )
+    }
+}
+
+@Composable
+fun PillLabel(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = NeonCyan.copy(alpha = 0.12f),
+        tonalElevation = 0.dp
+    ) {
+        Text(
+            text = text.uppercase(),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = NeonMint
+        )
+    }
 }
 
 @Composable
@@ -306,9 +354,9 @@ fun GradientButton(
     val gradient = if (enabled) {
         Brush.linearGradient(
             colors = listOf(
-                NeonPink.copy(alpha = 0.95f),
-                Purple40.copy(alpha = 0.92f),
-                NeonBlue.copy(alpha = 0.95f)
+                NeonBlue.copy(alpha = 0.95f),
+                Purple40.copy(alpha = 0.94f),
+                NeonPink.copy(alpha = 0.92f)
             )
         )
     } else {
@@ -318,8 +366,8 @@ fun GradientButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(18.dp, RoundedCornerShape(18.dp), ambientColor = NeonBlue.copy(alpha = 0.28f), spotColor = NeonPink.copy(alpha = 0.22f))
-            .clip(RoundedCornerShape(18.dp))
+            .shadow(14.dp, RoundedCornerShape(16.dp), ambientColor = NeonBlue.copy(alpha = 0.18f), spotColor = NeonPink.copy(alpha = 0.16f))
+            .clip(RoundedCornerShape(16.dp))
             .background(gradient)
             .border(
                 width = 1.dp,
@@ -330,10 +378,10 @@ fun GradientButton(
                         NeonPink.copy(alpha = if (enabled) 0.3f else 0.12f)
                     )
                 ),
-                shape = RoundedCornerShape(18.dp)
+                shape = RoundedCornerShape(16.dp)
             )
             .then(if (enabled && !isLoading) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 15.dp),
+            .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {

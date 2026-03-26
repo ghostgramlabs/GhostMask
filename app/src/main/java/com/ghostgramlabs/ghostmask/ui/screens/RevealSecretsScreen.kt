@@ -1,6 +1,7 @@
 package com.ghostgramlabs.ghostmask.ui.screens
 
-import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.filled.HideSource
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,11 +52,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.fragment.app.FragmentActivity
 import com.ghostgramlabs.ghostmask.security.BiometricAuthManager
+import com.ghostgramlabs.ghostmask.ui.components.FormSectionCard
 import com.ghostgramlabs.ghostmask.security.SecureViewController
 import com.ghostgramlabs.ghostmask.ui.components.GradientButton
 import com.ghostgramlabs.ghostmask.ui.components.GhostMaskTitle
 import com.ghostgramlabs.ghostmask.ui.components.ImagePickerCard
 import com.ghostgramlabs.ghostmask.ui.components.PasswordField
+import com.ghostgramlabs.ghostmask.ui.components.PillLabel
 import com.ghostgramlabs.ghostmask.ui.theme.DarkCard
 import com.ghostgramlabs.ghostmask.ui.theme.DarkSurface
 import com.ghostgramlabs.ghostmask.ui.theme.ErrorRed
@@ -64,6 +66,7 @@ import com.ghostgramlabs.ghostmask.ui.theme.SuccessGreen
 import com.ghostgramlabs.ghostmask.ui.theme.TextPrimary
 import com.ghostgramlabs.ghostmask.ui.theme.TextSecondary
 import com.ghostgramlabs.ghostmask.ui.theme.WarningYellow
+import com.ghostgramlabs.ghostmask.viewmodel.AppSecurityViewModel
 import com.ghostgramlabs.ghostmask.viewmodel.RevealSecretsViewModel
 import androidx.compose.runtime.collectAsState
 
@@ -71,6 +74,7 @@ import androidx.compose.runtime.collectAsState
 @Composable
 fun RevealSecretsScreen(
     viewModel: RevealSecretsViewModel,
+    appSecurityViewModel: AppSecurityViewModel,
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -79,20 +83,24 @@ fun RevealSecretsScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? -> uri?.let(viewModel::setEncodedImage) }
 
     val secureEnabled = uiState.decodingResult?.meta?.let {
         it.flags.secureView || it.flags.blockScreenshots || it.flags.hideFromRecents
     } == true
 
-    DisposableEffect(activity, secureEnabled) {
+    DisposableEffect(activity) {
         val controller = activity?.let(::SecureViewController)
         controller?.setSecure(secureEnabled)
         onDispose {
             controller?.setSecure(false)
             viewModel.closeRevealIfNeeded()
         }
+    }
+
+    LaunchedEffect(activity, secureEnabled) {
+        activity?.let { SecureViewController(it).setSecure(secureEnabled) }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -110,12 +118,17 @@ fun RevealSecretsScreen(
     LaunchedEffect(uiState.pendingBiometricPrompt) {
         if (uiState.pendingBiometricPrompt && activity != null) {
             viewModel.onBiometricPromptShown()
-            BiometricAuthManager(activity).authenticate(
-                title = "Unlock secret",
-                subtitle = "Authenticate before GhostMask reveals the hidden content",
-                onSuccess = { viewModel.onBiometricResult(true) },
-                onError = { viewModel.onBiometricResult(false, it) }
-            )
+            val biometricAuthManager = BiometricAuthManager(activity)
+            if (biometricAuthManager.canAuthenticate()) {
+                biometricAuthManager.authenticate(
+                    title = "Unlock secret",
+                    subtitle = "Authenticate before GhostMask reveals the hidden content",
+                    onSuccess = { viewModel.onBiometricResult(true) },
+                    onError = { viewModel.onBiometricResult(false, it) }
+                )
+            } else {
+                viewModel.onBiometricResult(false, "Biometric or device credential authentication is not available on this device.")
+            }
         }
     }
 
@@ -134,7 +147,10 @@ fun RevealSecretsScreen(
                 },
                 actions = {
                     if (uiState.decodingResult != null) {
-                        TextButton(onClick = viewModel::panic) {
+                        TextButton(onClick = {
+                            viewModel.panic()
+                            appSecurityViewModel.lockNow()
+                        }) {
                             Text("Panic", color = ErrorRed)
                         }
                     }
@@ -154,18 +170,24 @@ fun RevealSecretsScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ImagePickerCard(
-                imageUri = uiState.encodedImageUri,
-                label = "Encoded image",
-                icon = Icons.Default.ImageSearch,
-                onClick = {
+            PillLabel("Reveal Workflow")
+            FormSectionCard(
+                title = "Encoded Source",
+                subtitle = "Pick the PNG that contains the hidden encrypted payload."
+            ) {
+                ImagePickerCard(
+                    imageUri = uiState.encodedImageUri,
+                    label = "Encoded image",
+                    icon = Icons.Default.ImageSearch,
+                    onClick = {
                     imagePicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        arrayOf("image/png")
                     )
                 }
             )
 
-            PasswordField(value = uiState.password, onValueChange = viewModel::setPassword)
+                PasswordField(value = uiState.password, onValueChange = viewModel::setPassword)
+            }
 
             uiState.errorMessage?.let { message ->
                 Card(
@@ -181,60 +203,81 @@ fun RevealSecretsScreen(
                 }
             }
 
-            GradientButton(
-                text = "Decrypt & Reveal",
-                onClick = viewModel::decode,
-                enabled = uiState.encodedImageUri != null && !uiState.isDecoding,
-                isLoading = uiState.isDecoding || uiState.isLoading
-            )
+            FormSectionCard(
+                title = "Reveal Action",
+                subtitle = "Decrypt the payload and apply its embedded viewing rules."
+            ) {
+                GradientButton(
+                    text = "Decrypt & Reveal",
+                    onClick = viewModel::decode,
+                    enabled = uiState.encodedImageUri != null && !uiState.isDecoding,
+                    isLoading = uiState.isDecoding || uiState.isLoading
+                )
+            }
 
             uiState.decodingResult?.let { result ->
-                HorizontalDivider()
-                PolicySummaryCard(result.meta.flags.requireBiometric, result.meta.flags.oneTimeReveal, result.meta.flags.clearOnBackground)
-                uiState.countdownRemainingSeconds?.let { seconds ->
-                    Card(colors = CardDefaults.cardColors(containerColor = WarningYellow.copy(alpha = 0.1f))) {
-                        Text(
-                            "Self-destruct in ${formatTimer(seconds)}",
-                            color = WarningYellow,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-
-                if (uiState.revealMasked) {
-                    Card(colors = CardDefaults.cardColors(containerColor = DarkCard)) {
-                        Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            Text("Secret hidden while the app is inactive.", color = TextSecondary)
+                FormSectionCard(
+                    title = "Active Reveal Session",
+                    subtitle = "The secret is open and GhostMask is enforcing its protection rules."
+                ) {
+                    HorizontalDivider()
+                    if (secureEnabled) {
+                        Card(colors = CardDefaults.cardColors(containerColor = SuccessGreen.copy(alpha = 0.1f))) {
+                            Text("Secure View Enabled", modifier = Modifier.padding(12.dp), color = SuccessGreen)
                         }
                     }
-                } else {
-                    result.text?.let { text ->
-                        Card(colors = CardDefaults.cardColors(containerColor = DarkCard), shape = RoundedCornerShape(14.dp)) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Hidden Text", color = TextSecondary, style = MaterialTheme.typography.labelLarge)
-                                Text(text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+                    PolicySummaryCard(result.meta.flags.requireBiometric, result.meta.flags.oneTimeReveal, result.meta.flags.clearOnBackground)
+                    uiState.countdownRemainingSeconds?.let { seconds ->
+                        Card(colors = CardDefaults.cardColors(containerColor = WarningYellow.copy(alpha = 0.1f))) {
+                            Text(
+                                "Self-destruct in ${formatTimer(seconds)}",
+                                color = WarningYellow,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    if (uiState.revealMasked) {
+                        Card(colors = CardDefaults.cardColors(containerColor = DarkCard)) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("Secret hidden while the app is inactive.", color = TextSecondary)
                             }
                         }
-                    }
+                    } else {
+                        result.text?.let { text ->
+                            Card(colors = CardDefaults.cardColors(containerColor = DarkCard), shape = RoundedCornerShape(14.dp)) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Hidden Text", color = TextSecondary, style = MaterialTheme.typography.labelLarge)
+                                    Text(text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+                                    TextButton(onClick = {
+                                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                        clipboard?.setPrimaryClip(ClipData.newPlainText("GhostMask secret", text))
+                                    }) {
+                                        Text("Copy text", color = WarningYellow)
+                                    }
+                                }
+                            }
+                        }
 
-                    if (result.hasImage) {
-                        Card(colors = CardDefaults.cardColors(containerColor = DarkCard), shape = RoundedCornerShape(14.dp)) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("Hidden Image", color = TextSecondary, style = MaterialTheme.typography.labelLarge)
-                                viewModel.getRevealedImageBitmap()?.let { bitmap ->
-                                    Image(
-                                        bitmap = bitmap.asImageBitmap(),
-                                        contentDescription = "Revealed secret image",
-                                        contentScale = ContentScale.FillWidth,
-                                        modifier = Modifier.fillMaxWidth()
+                        if (result.hasImage) {
+                            Card(colors = CardDefaults.cardColors(containerColor = DarkCard), shape = RoundedCornerShape(14.dp)) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("Hidden Image", color = TextSecondary, style = MaterialTheme.typography.labelLarge)
+                                    viewModel.getRevealedImageBitmap()?.let { bitmap ->
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "Revealed secret image",
+                                            contentScale = ContentScale.FillWidth,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                    GradientButton(
+                                        text = if (uiState.savedRevealedImage) "Saved" else "Export image",
+                                        onClick = viewModel::saveRevealedImage,
+                                        enabled = !uiState.isSaving && !uiState.savedRevealedImage,
+                                        isLoading = uiState.isSaving
                                     )
                                 }
-                                GradientButton(
-                                    text = if (uiState.savedRevealedImage) "Saved" else "Export image",
-                                    onClick = viewModel::saveRevealedImage,
-                                    enabled = !uiState.isSaving && !uiState.savedRevealedImage,
-                                    isLoading = uiState.isSaving
-                                )
                             }
                         }
                     }
@@ -243,24 +286,6 @@ fun RevealSecretsScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
         }
-    }
-
-    if (uiState.pendingDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { viewModel.confirmDeleteEncodedFile(false) },
-            title = { Text("Delete encoded file?") },
-            text = { Text("This secret requested deletion of the encoded source image after reveal. Delete the selected file now?") },
-            confirmButton = {
-                TextButton(onClick = { viewModel.confirmDeleteEncodedFile(true) }) {
-                    Text("Delete", color = ErrorRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.confirmDeleteEncodedFile(false) }) {
-                    Text("Keep")
-                }
-            }
-        )
     }
 }
 
