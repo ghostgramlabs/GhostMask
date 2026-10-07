@@ -1,8 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
+
+// Release signing comes from the git-ignored local.properties (ghostmask.storeFile,
+// .storePassword, .keyAlias, .keyPassword), so no credentials live in the repository.
+// Without them, debug builds still work and release builds are left unsigned.
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val releaseStoreFile: String? = localProps.getProperty("ghostmask.storeFile")
 
 android {
     namespace = "com.ghostgramlabs.ghostmask"
@@ -23,17 +33,19 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../ghostmask-release.jks")
-            storePassword = "REMOVED"
-            keyAlias = "ghostmask"
-            keyPassword = "REMOVED"
+            if (releaseStoreFile != null) {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = localProps.getProperty("ghostmask.storePassword")
+                keyAlias = localProps.getProperty("ghostmask.keyAlias")
+                keyPassword = localProps.getProperty("ghostmask.keyPassword")
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseStoreFile != null) signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

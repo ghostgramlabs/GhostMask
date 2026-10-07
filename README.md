@@ -2,6 +2,12 @@
 
 Hide secret text and images inside a normal-looking image using encryption and steganography.
 
+[![CI](https://github.com/ghostgramlabs/GhostMask/actions/workflows/ci.yml/badge.svg)](https://github.com/ghostgramlabs/GhostMask/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+An Android app by [GhostGram Labs](https://ghostgramlabs.com). Everything runs on the device:
+no account, no server, no network access.
+
 ## What It Does
 
 GhostMask embeds encrypted secrets (text, images, or both) into the least-significant bits of a cover image's pixel data. The result is a PNG that looks identical to the original but carries hidden, encrypted content that can only be revealed with the correct password.
@@ -103,7 +109,23 @@ cd GhostMask
 ./gradlew connectedAndroidTest
 ```
 
+On Windows, use `gradlew.bat` instead of `./gradlew`.
+
 **Requirements**: Android Studio Hedgehog+, JDK 17, Android SDK 34, min API 26.
+
+### Release signing
+
+Debug builds need no setup. Release builds read their signing key from `local.properties`,
+which git ignores:
+
+```properties
+ghostmask.storeFile=your-release-key.jks
+ghostmask.storePassword=...
+ghostmask.keyAlias=...
+ghostmask.keyPassword=...
+```
+
+`storeFile` is resolved relative to the project root. Never commit a keystore or its passwords.
 
 ## Security
 
@@ -112,3 +134,21 @@ cd GhostMask
 - Random salt and nonce per encryption — no IV reuse
 - Wrong password detection via GCM authentication tag verification
 - No custom or weak crypto — standard javax.crypto APIs only
+
+## Contributing
+
+Bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). To report a security problem, follow
+[SECURITY.md](SECURITY.md) instead of opening a public issue. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+GhostMask is released under the [Apache License 2.0](LICENSE). You may use, modify and
+redistribute it, including commercially, as long as you keep the copyright notice and the
+[NOTICE](NOTICE) file, which credits GhostGram Labs.
+
+The GhostMask name and icon are not covered by the license. If you publish a fork, give it its
+own name, icon and application ID.
+
+Made by [GhostGram Labs](https://ghostgramlabs.com).
